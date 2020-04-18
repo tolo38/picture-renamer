@@ -1,0 +1,32 @@
+#!/bin/bash
+
+format_progress()
+{
+while read in
+do
+file_name=$(echo $in| sed 's/=*\(.*\)\[.*/\1/')	
+percent=$(echo $in| sed 's/.*\[\(.*\)\]/\1/' )	
+percent=$(echo "100 * $percent" |bc) 
+echo "# $file_name"
+echo $percent
+done
+}
+
+DIR=$(zenity  --file-selection --title="Choisi un dossier" --directory) ||{
+exit 0
+}
+
+zenity --question --text "Modifier les sous-dossier?" --ok-label="sous-dossier" && REC="-r"
+
+{
+	echo "Dossier : $DIR\n"
+	echo "Option : $REC\n\n"
+	exiftool $REC -progress -ext jpg '-FileName<CreateDate' -d %Y_%m_%d__%H_%M_%S%%-c.%%e "$DIR" 2>&1
+}| 
+tee >( 
+	grep --invert-match "^==="|
+	zenity --title "Traitement des photos en cour..." --auto-scroll --text-info)|
+grep --line-buffered "^==="|
+format_progress|
+zenity --title "Traitement des photos en cour..." --auto-close --progress
+
