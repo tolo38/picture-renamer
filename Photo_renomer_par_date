@@ -1,5 +1,19 @@
 #!/bin/bash
 
+#Option
+DEFAULT=""
+#unset DEFAULT=""
+EXT="-ext jpg"
+RENAME_FORMAT="%Y/%m_%B/%Y_%m_%d__%H_%M_%S%%-c.%%e"
+#priority list
+NAME_FROM_DATE=('-FileName<gpsdatetime'\
+                '-FileName<DateTimeOriginal'\
+                '-FileName<CreateDate'\
+                '-FileName<FileModifyDate')
+TMP="sans_date"
+DEF="_par_annee"
+
+#format progress info from exiftool to zenity
 format_progress()
 {
 while read in
@@ -12,16 +26,55 @@ echo $percent
 done
 }
 
-DIR=$(zenity  --file-selection --title="Choisi un dossier" --directory) ||{
+#Prevent display gtk warning
+zenity(){
+/usr/bin/zenity "$@" 2> >(grep -v 'GtkDialog' >&2)
+}
+
+#info about the programme
+zenity --width=500 --info --text="
+\tOutil d'organisation de Photo\n
+Cette outil permet l'organisation des photos
+\nfonctionment:
+creer un nouveau dossier contenant tout les images triés par mois et année. \
+les fichiers n'ayant pas était traité se trouve dans le dossier \"sans_date\"
+\naction:
+    \t- choisir le dossier a organiser
+Optionel :
+    \t- [oui/non] parcourir les sous-dossier
+    \t- choisir un dossier de destination
+    \t- [oui/non] creer une copie local \
+(si oui le dossier destionation dois etre sur le meme disque)
+\nNOTE : La version actuel ne traite que les jpg
+"
+
+#folder to organise
+SRC=$(zenity  --file-selection --title="Choisissez le dossier à organiser" --directory) ||{
+exit 0
+}
+SRC_I=$SRC
+
+#(rec) [default=True] ask: take subfolder into acount
+[ -n "${DEFAULT+set}" ] || zenity --question --text "Modifier les sous-dossier?" --ok-label="sous-dossier" && REC="-r"
+
+#new location
+[ -n "${DEFAULT+set}" ] && DST="$SRC$DEF" && mkdir $DST || DST=$(zenity  --file-selection --save --title="Choisissez le dossier destination" --directory) ||{
 exit 0
 }
 
-zenity --question --text "Modifier les sous-dossier?" --ok-label="sous-dossier" && REC="-r"
+#Duplicate SRC file system with hard links [default=True]
+[ -n "${DEFAULT+set}" ] || zenity --question --text="Creer une copie locale (plus sure)" && COPY=$? || unset COPY
+[ -n "$COPY" ] && cp -al "$SRC" "$DST"/"$TMP" -v |
+zenity --title "Creation de la copie locale en cour..." --auto-scroll --text-info &
+[ -n "$COPY" ] && SRC="$DST"/"$TMP"
 
+
+#processing
 {
-	echo "Dossier : $DIR\n"
+	echo "Dossier :     $SRC_I\n"
+	echo "Destination : $DST\n"
 	echo "Option : $REC\n\n"
-	exiftool $REC -progress -ext jpg '-FileName<CreateDate' -d %Y_%m_%d__%H_%M_%S%%-c.%%e "$DIR" 2>&1
+	exiftool $REC -progress $EXT "${NAME_FROM_DATE[@]}" -d $DST/$RENAME_FORMAT "$SRC" 2>&1
 }| 
 tee >( 
 	grep --invert-match "^==="|
@@ -30,3 +83,5 @@ grep --line-buffered "^==="|
 format_progress|
 zenity --title "Traitement des photos en cour..." --auto-close --progress
 
+#remove empty directories [if copy]
+[ -n "$COPY" ] && find $SRC -empty -type d -delete
